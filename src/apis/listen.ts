@@ -9,6 +9,7 @@ import { ZaloApiError } from "../Errors/ZaloApiError.js";
 import type { ContextSession } from "../context.js";
 import { type SeenMessage, GroupSeenMessage, UserSeenMessage } from "../models/SeenMessage.js";
 import { type DeliveredMessage, UserDeliveredMessage, GroupDeliveredMessage } from "../models/DeliveredMessage.js";
+import { ClearUnread, type TClearUnread } from "../models/ClearUnread.js";
 
 type UploadEventData = {
     fileUrl: string;
@@ -43,6 +44,8 @@ interface ListenerEvents {
     old_messages: [messages: Message[], type: ThreadType];
     seen_messages: [messages: SeenMessage[]];
     delivered_messages: [messages: DeliveredMessage[]];
+    /** A thread was read up to a message in another session of this account (cmd 504 user, 524 group). */
+    unread_cleared: [data: ClearUnread[]];
     reaction: [reaction: Reaction];
     old_reactions: [reactions: Reaction[], isGroup: boolean];
     upload_attachment: [data: UploadEventData];
@@ -269,6 +272,18 @@ export class Listener extends EventEmitter<ListenerEvents> {
                             this.onMessageCallback(messageObject);
                             this.emit("message", messageObject);
                         }
+                    }
+                }
+
+                if (version == 1 && (cmd == 504 || cmd == 524) && subCmd == 0) {
+                    const parsedData = (await decodeEventData(parsed, this.cipherKey)).data;
+                    const { clearUnreads } = parsedData;
+                    if (Array.isArray(clearUnreads) && clearUnreads.length > 0) {
+                        const isGroup = cmd == 524;
+                        this.emit(
+                            "unread_cleared",
+                            clearUnreads.map((entry: TClearUnread) => new ClearUnread(entry, isGroup)),
+                        );
                     }
                 }
 

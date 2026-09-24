@@ -14,6 +14,7 @@ export * from "./QuickMessage.js";
 export * from "./Reaction.js";
 export * from "./Reminder.js";
 export * from "./SeenMessage.js";
+export * from "./ClearUnread.js";
 export * from "./Typing.js";
 export * from "./Undo.js";
 export * from "./User.js";
