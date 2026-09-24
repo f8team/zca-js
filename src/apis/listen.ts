@@ -9,7 +9,7 @@ import { ZaloApiError } from "../Errors/ZaloApiError.js";
 import type { ContextSession } from "../context.js";
 import { type SeenMessage, GroupSeenMessage, UserSeenMessage } from "../models/SeenMessage.js";
 import { type DeliveredMessage, UserDeliveredMessage, GroupDeliveredMessage } from "../models/DeliveredMessage.js";
-import { ClearUnread, type TClearUnread } from "../models/ClearUnread.js";
+import { type ClearUnread, GroupClearUnread, UserClearUnread } from "../models/ClearUnread.js";
 
 type UploadEventData = {
     fileUrl: string;
@@ -44,7 +44,6 @@ interface ListenerEvents {
     old_messages: [messages: Message[], type: ThreadType];
     seen_messages: [messages: SeenMessage[]];
     delivered_messages: [messages: DeliveredMessage[]];
-    /** A thread was read up to a message in another session of this account (cmd 504 user, 524 group). */
     unread_cleared: [data: ClearUnread[]];
     reaction: [reaction: Reaction];
     old_reactions: [reactions: Reaction[], isGroup: boolean];
@@ -275,18 +274,6 @@ export class Listener extends EventEmitter<ListenerEvents> {
                     }
                 }
 
-                if (version == 1 && (cmd == 504 || cmd == 524) && subCmd == 0) {
-                    const parsedData = (await decodeEventData(parsed, this.cipherKey)).data;
-                    const { clearUnreads } = parsedData;
-                    if (Array.isArray(clearUnreads) && clearUnreads.length > 0) {
-                        const isGroup = cmd == 524;
-                        this.emit(
-                            "unread_cleared",
-                            clearUnreads.map((entry: TClearUnread) => new ClearUnread(entry, isGroup)),
-                        );
-                    }
-                }
-
                 if (version == 1 && cmd == 521 && subCmd == 0) {
                     const parsedData = (await decodeEventData(parsed, this.cipherKey)).data;
                     const { groupMsgs } = parsedData;
@@ -470,6 +457,19 @@ export class Listener extends EventEmitter<ListenerEvents> {
                         let seenObjects = groupSeenMsgs.map((seen) => new GroupSeenMessage(this.ctx.uid, seen));
                         if (!this.selfListen) seenObjects = seenObjects.filter((seen) => !seen.isSelf);
                         this.emit("seen_messages", seenObjects);
+                    }
+                }
+
+                if ((cmd == 504 || cmd == 524) && subCmd == 0) {
+                    const parsedData = (await decodeEventData(parsed, this.cipherKey)).data;
+                    const { clearUnreads } = parsedData;
+
+                    if (Array.isArray(clearUnreads) && clearUnreads.length > 0) {
+                        // TODO: only type 0 is a thread read, type 2 comes with idTo "-1"
+                        const clearObjects = clearUnreads
+                            .filter((clear) => clear.type == 0)
+                            .map((clear) => (cmd == 524 ? new GroupClearUnread(clear) : new UserClearUnread(clear)));
+                        if (clearObjects.length > 0) this.emit("unread_cleared", clearObjects);
                     }
                 }
 
